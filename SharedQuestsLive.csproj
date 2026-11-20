@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>SharedQuestsLive</AssemblyName>
+    <RootNamespace>SharedQuestsLive</RootNamespace>
+    <Version>1.0.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <!-- An SPT 4.1 game folder whose Assembly-CSharp.dll is SPT-patched (the launcher only patches it while the game runs). -->
+    <GameDir Condition="'$(GameDir)' == ''">D:\New folderspt\FikaHeadless</GameDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(GameDir)\EscapeFromTarkov_Data\Managed\Assembly-CSharp.dll" Private="false" />
+    <Reference Include="$(GameDir)\EscapeFromTarkov_Data\Managed\Comfort.dll" Private="false" />
+    <Reference Include="$(GameDir)\EscapeFromTarkov_Data\Managed\Comfort.Unity.dll" Private="false" />
+    <Reference Include="$(GameDir)\EscapeFromTarkov_Data\Managed\Newtonsoft.Json.dll" Private="false" />
+    <Reference Include="$(GameDir)\EscapeFromTarkov_Data\Managed\UnityEngine.dll" Private="false" />
+    <Reference Include="$(GameDir)\EscapeFromTarkov_Data\Managed\UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="$(GameDir)\EscapeFromTarkov_Data\Managed\Sirenix.Serialization.dll" Private="false" Condition="Exists('$(GameDir)\EscapeFromTarkov_Data\Managed\Sirenix.Serialization.dll')" />
+    <Reference Include="$(GameDir)\BepInEx\core\BepInEx.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\core\0Harmony.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\plugins\spt\spt-common.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\plugins\spt\spt-reflection.dll" Private="false" />
+  </ItemGroup>
+</Project>
