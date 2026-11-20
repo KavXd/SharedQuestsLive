@@ -27,7 +27,7 @@ using UnityEngine;
 
 namespace SharedQuestsLive;
 
-[BepInPlugin(Guid, "Shared Quests Live", "1.0.0")]
+[BepInPlugin(Guid, "Shared Quests Live", "1.0.1")]
 public class Plugin : BaseUnityPlugin
 {
     public const string Guid = "akvxxx16.sharedquests.live";
@@ -114,26 +114,43 @@ public class Plugin : BaseUnityPlugin
             }
             return;
         }
+        if (_warnedMismatch)
+        {
+            _warnedMismatch = false;
+            Log.LogInfo("Found the quest list for the current profile");
+        }
 
         var request = Report(profile, controllers);
         _pendingProfile = profile;
         _pending = RequestHandler.PostJsonAsync(Route, JsonConvert.SerializeObject(request));
     }
 
-    // Controllers made for this profile. Older ones (from before a raid) hold an out-of-date copy.
-    static List<QuestControllerClientBackend> Current(Profile profile)
+    // The quest lists for this profile. Normally the ones made for this exact profile object. If there are
+    // none (some menus and mods hand the game a fresh copy of the profile), the newest list made for the
+    // same player is used. Lists made for an older copy are dropped so they don't pile up.
+    static List<(QuestControllerClientBackend Controller, Profile Profile)> Current(Profile profile)
     {
-        lock (Controllers) return Controllers.Where(c => ReferenceEquals(c.Profile, profile)).Select(c => c.Controller).ToList();
+        lock (Controllers)
+        {
+            var exact = Controllers.Where(c => ReferenceEquals(c.Profile, profile)).ToList();
+            if (exact.Count > 0)
+            {
+                Controllers.RemoveAll(c => !ReferenceEquals(c.Profile, profile) && c.Profile.ProfileId == profile.ProfileId);
+                return exact;
+            }
+            var same = Controllers.LastOrDefault(c => c.Profile.ProfileId == profile.ProfileId);
+            return same.Controller == null ? new() : new() { same };
+        }
     }
 
     // What this game has right now. The server keeps it so it knows which progress the game already has.
-    static SyncRequest Report(Profile profile, List<QuestControllerClientBackend> controllers)
+    static SyncRequest Report(Profile profile, List<(QuestControllerClientBackend Controller, Profile Profile)> controllers)
     {
         var request = new SyncRequest();
         foreach (var pair in profile.TaskConditionCounters ?? new Dictionary<MongoID, TaskConditionCounter>())
             if (pair.Value != null) request.Counters[pair.Key.ToString()] = pair.Value.Value;
 
-        foreach (var controller in controllers)
+        foreach (var (controller, _) in controllers)
         {
             if (controller.Quests == null) continue;
             foreach (var quest in controller.Quests)
@@ -195,12 +212,12 @@ public class Plugin : BaseUnityPlugin
 
     //====================[ Putting it into the game ]====================
     // Returns the names of the quests that changed.
-    static List<string> Apply(SyncReply reply, List<QuestControllerClientBackend> controllers)
+    static List<string> Apply(SyncReply reply, List<(QuestControllerClientBackend Controller, Profile Profile)> controllers)
     {
         var updated = new List<string>();
         var changedIds = new HashSet<string>();
 
-        foreach (var controller in controllers)
+        foreach (var (controller, profile) in controllers)
         {
             if (controller.Quests == null) continue;
             foreach (var quest in controller.Quests.ToList())
@@ -209,19 +226,28 @@ public class Plugin : BaseUnityPlugin
                 if (quest.QuestStatus != EQuestStatus.Started && quest.QuestStatus != EQuestStatus.AvailableForFinish) continue;
                 var changed = changedIds.Contains(quest.Id);
 
-                // Counters (kills, items handed in, ...). The game's counters are shared by its quest lists.
+                // Counters. Kill-style counters live in the quest's counter list; items handed in, weapons
+                // built and items sold to traders live on the profile, keyed by the step they count for.
+                // Both are shared by all of the game's quest lists.
                 var counters = quest.ConditionCountersManager;
-                if (counters != null)
+                var steps = new List<Condition>();
+                foreach (var pair in reply.Counters)
                 {
-                    foreach (var pair in reply.Counters)
+                    if (pair.Value.Quest != quest.Id) continue;
+                    var id = new MongoID(pair.Key);
+                    var value = (int)Math.Round(pair.Value.Value);
+                    var counter = counters?.GetCounter(id);
+                    Condition step = null;
+                    if (counter == null)
                     {
-                        if (pair.Value.Quest != quest.Id) continue;
-                        var counter = counters.GetCounter(new MongoID(pair.Key));
-                        var value = (int)Math.Round(pair.Value.Value);
-                        if (counter == null || counter.Value >= value) continue;
-                        counter.Value = value;
-                        changed = true;
+                        step = quest.ProgressCheckers?.Keys.FirstOrDefault(c => c != null && c.id == id);
+                        if (step == null) continue;
+                        counter = profile.GetTaskConditionCounter(quest, id);
                     }
+                    if (counter == null || counter.Value >= value) continue;
+                    counter.Value = value;
+                    if (step != null) steps.Add(step);
+                    changed = true;
                 }
 
                 // Finished steps.
@@ -233,8 +259,11 @@ public class Plugin : BaseUnityPlugin
                 }
 
                 if (!changed) continue;
-                quest.CallOnConditionChangedEvent(quest);
+                // The same refresh the game does after a hand-in.
                 quest.CheckForStatusChange(true, false);
+                foreach (var step in steps)
+                    if (quest.ProgressCheckers.TryGetValue(step, out var checker)) checker?.CallConditionChanged();
+                quest.CallOnConditionChangedEvent(quest);
 
                 // Every step is done: ready to turn in.
                 if ((EQuestStatus)server.Status == EQuestStatus.AvailableForFinish && quest.QuestStatus == EQuestStatus.Started)

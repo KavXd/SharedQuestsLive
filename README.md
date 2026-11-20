@@ -4,7 +4,7 @@ A client plugin for **SPT 4.1.x** that goes with the [Shared Quests](https://git
 server mod. It shows your group's quest progress in your game **within a few seconds**, instead of
 after your next raid or a restart.
 
-- Version: 1.0.0
+- Version: 1.0.1
 - SPT: 4.1.x (tested on 4.1.6)
 - Required: [Shared Quests](https://github.com/KavXd/SharedQuests) **1.1.0 or newer** on the server
 - Optional: [Fika](https://github.com/project-fika)
